@@ -1,12 +1,12 @@
 package cs.edu;
 
-import java.io.File;
+import java.io.FileInputStream;
 import java.io.IOException;
-import java.io.PrintWriter;
 import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.PreparedStatement;
 import java.sql.SQLException;
+import java.util.Properties;
 import java.util.Scanner;
 import javax.servlet.ServletException;
 import javax.servlet.annotation.MultipartConfig;
@@ -16,6 +16,7 @@ import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 import javax.servlet.http.Part;
 import org.apache.commons.text.StringEscapeUtils;
+import java.io.File;
 
 
 @WebServlet("/fileUploadServlet")
@@ -29,9 +30,29 @@ public class fileUploadServlet extends HttpServlet {
     private static final long serialVersionUID = 205242440643911308L;
 
     private static final String UPLOAD_DIR = "uploaded_files";
-    private static final String DB_URL = "jdbc:mysql://localhost:3306/abc"; // Replace 'abc' with your actual database name
-    private static final String USER = "root"; // Replace with your MySQL username
-    private static final String PASSWORD = "Anurag@531"; // Replace with your MySQL password
+    private static final String CONFIG_FILE = "C:\\properties\\db.properties"; // Set the path
+
+    private String dbUrl;
+    private String dbUser;
+    private String dbPassword;
+
+    @Override
+    public void init() throws ServletException {
+        super.init();
+        loadDatabaseConfig();
+    }
+
+    private void loadDatabaseConfig() {
+        Properties props = new Properties();
+        try (FileInputStream fis = new FileInputStream(CONFIG_FILE)) {
+            props.load(fis);
+            dbUrl = props.getProperty("db.url");
+            dbUser = props.getProperty("db.user");
+            dbPassword = props.getProperty("db.password");
+        } catch (IOException e) {
+            throw new RuntimeException("Failed to load database configuration", e);
+        }
+    }
 
     @Override
     protected void doPost(HttpServletRequest request, HttpServletResponse response) throws ServletException, IOException {
@@ -43,7 +64,6 @@ public class fileUploadServlet extends HttpServlet {
                 fileSaveDir.mkdirs();
             }
 
-            System.out.println("Upload File Directory=" + fileSaveDir.getAbsolutePath());
             String fileName = "";
 
             // Save uploaded file
@@ -51,17 +71,14 @@ public class fileUploadServlet extends HttpServlet {
                 fileName = getFileName(part);
                 fileName = fileName.substring(fileName.lastIndexOf("\\") + 1);
 
-                // Validate file extension
                 if (!isAllowedFileExtension(fileName)) {
                     response.getWriter().println("Only text-based files are allowed (e.g., .txt, .csv, .json, .xml).");
                     return;
                 }
 
-                // Save file
                 part.write(uploadFilePath + File.separator + fileName);
             }
 
-            // Read content from uploaded file
             String content;
             try (Scanner scanner = new Scanner(new File(uploadFilePath + File.separator + fileName))) {
                 content = scanner.useDelimiter("\\Z").next();
@@ -70,26 +87,18 @@ public class fileUploadServlet extends HttpServlet {
                 e.printStackTrace();
             }
 
-            // Encode the file content and file name to prevent XSS
-            String safeFileName = StringEscapeUtils.escapeHtml4(fileName);
-            String safeContent = StringEscapeUtils.escapeHtml4(content);
+            response.getWriter().write("Content in the file: " + content + "\n");
 
-            // Write encoded content to response
-            response.getWriter().write(safeContent);
-
-            // Insert file details into the database
             insertFileRecord(fileName, content, response);
 
         } catch (IllegalStateException e) {
-            // Handle file size limit exceeded
-            response.getWriter().println("File is too large. Maximum allowed file size is 50 MB.");
+            response.getWriter().println("File is too large. Maximum allowed file size is 10 MB.");
             e.printStackTrace();
         }
     }
 
     private String getFileName(Part part) {
         String contentDisp = part.getHeader("content-disposition");
-        System.out.println("content-disposition header= " + contentDisp);
         String[] tokens = contentDisp.split(";");
         for (String token : tokens) {
             if (token.trim().startsWith("filename")) {
@@ -99,7 +108,6 @@ public class fileUploadServlet extends HttpServlet {
         return "";
     }
 
-    // Helper method to validate file extensions
     private boolean isAllowedFileExtension(String fileName) {
         String fileExtension = fileName.substring(fileName.lastIndexOf('.') + 1).toLowerCase();
         return fileExtension.equals("txt") || fileExtension.equals("csv") || fileExtension.equals("json")
@@ -108,37 +116,22 @@ public class fileUploadServlet extends HttpServlet {
 
     private void insertFileRecord(String fileName, String fileContent, HttpServletResponse response) throws IOException {
         String insertSQL = "INSERT INTO uploaded_files (file_name, file_content) VALUES (?, ?)";
-
         try {
-            // Load the MySQL JDBC driver explicitly
             Class.forName("com.mysql.cj.jdbc.Driver");
-
-            try (Connection conn = DriverManager.getConnection(DB_URL, USER, PASSWORD);
+            try (Connection conn = DriverManager.getConnection(dbUrl, dbUser, dbPassword);
                  PreparedStatement pstmt = conn.prepareStatement(insertSQL)) {
-
-                if (conn != null) {
-                    System.out.println("Successfully connected to the database.");
-                } else {
-                    System.out.println("Failed to connect to the database.");
-                    response.getWriter().println("Database connection failed.");
-                    return;
-                }
 
                 pstmt.setString(1, fileName);
                 pstmt.setString(2, fileContent);
 
                 int rowsInserted = pstmt.executeUpdate();
-                System.out.println("Inserted " + rowsInserted + " row(s) into the database.");
                 response.getWriter().println("File details successfully inserted into the database.");
 
             }
         } catch (SQLException e) {
-            e.printStackTrace();
             response.getWriter().println("Database error: " + e.getMessage());
         } catch (ClassNotFoundException e) {
-            e.printStackTrace();
-            System.out.println("MySQL JDBC Driver not found.");
+            response.getWriter().println("JDBC Driver not found: " + e.getMessage());
         }
     }
 }
-
