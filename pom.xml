@@ -18,13 +18,13 @@
     <dependency>
         <groupId>mysql</groupId>
         <artifactId>mysql-connector-java</artifactId>
-        <version>8.0.30</version> <!-- Use the latest version if available -->
+        <version>8.0.31</version> <!-- Use the latest version if available -->
     </dependency>
  <!-- Proper html text encoding -->
     <dependency>
     <groupId>org.apache.commons</groupId>
     <artifactId>commons-text</artifactId>
-    <version>1.9</version>
+    <version>1.10.0</version>
 </dependency>
 
     </dependencies>
